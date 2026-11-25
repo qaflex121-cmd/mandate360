@@ -1,0 +1,8 @@
+// Experimental module; not connected to the public demo.
+const enc=new TextEncoder(),dec=new TextDecoder();
+const b64=b=>btoa(Array.from(new Uint8Array(b),x=>String.fromCharCode(x)).join(""));
+const un64=s=>Uint8Array.from(atob(s),x=>x.charCodeAt(0));
+const aad=enc.encode("Mandate360 vault v1");
+async function key(password,salt){if(typeof password!=="string"||password.length<12)throw Error("Use at least 12 characters");const material=await crypto.subtle.importKey("raw",enc.encode(password),"PBKDF2",false,["deriveKey"]);return crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:600000,hash:"SHA-256"},material,{name:"AES-GCM",length:256},false,["encrypt","decrypt"])}
+export async function seal(records,password){if(!Array.isArray(records))throw Error("Invalid records");const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));const ciphertext=await crypto.subtle.encrypt({name:"AES-GCM",iv,additionalData:aad},await key(password,salt),enc.encode(JSON.stringify(records)));return JSON.stringify({version:1,salt:b64(salt),iv:b64(iv),ciphertext:b64(ciphertext)})}
+export async function unseal(serialized,password){if(typeof serialized!=="string"||serialized.length>10000000)throw Error("Invalid vault");const v=JSON.parse(serialized);if(v.version!==1)throw Error("Unsupported vault");const salt=un64(v.salt),iv=un64(v.iv),ct=un64(v.ciphertext);if(salt.length!==16||iv.length!==12||ct.length<16)throw Error("Invalid vault");const records=JSON.parse(dec.decode(await crypto.subtle.decrypt({name:"AES-GCM",iv,additionalData:aad},await key(password,salt),ct)));if(!Array.isArray(records))throw Error("Invalid records");return records}
